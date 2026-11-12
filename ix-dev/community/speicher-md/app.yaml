@@ -1,0 +1,49 @@
+app_version: 0.1.5
+capabilities: []
+categories:
+- productivity
+changelog_url: https://github.com/coPetence/speicher.md/releases
+date_added: '2026-11-12'
+description: speicher.md is a self-hosted documentation platform that serves Markdown
+  from git, with per-folder access control, SSO and a built-in MCP server.
+home: https://docs.speicher.md
+host_mounts: []
+icon: https://media.sys.truenas.net/apps/speicher-md/icons/icon.svg
+keywords:
+- documentation
+- knowledgebase
+- markdown
+- wiki
+- git
+- mcp
+lib_version: 2.3.18
+lib_version_hash: ed9839f681342ae8ca5f8c4c860ae22d0845a0919f472ba780d6edbc838f2633
+maintainers:
+- email: dev@truenas.com
+  name: truenas
+  url: https://www.truenas.com/
+name: speicher-md
+run_as_context:
+- description: Container [postgres] runs as non-root user and group.
+  gid: 999
+  group_name: Host group is [docker]
+  uid: 999
+  user_name: Host user is [netdata]
+- description: Container [speicher] can run as any non-root user and group.
+  gid: 568
+  group_name: Host group is [apps]
+  uid: 568
+  user_name: Host user is [apps]
+- description: Container [worker] can run as any non-root user and group.
+  gid: 568
+  group_name: Host group is [apps]
+  uid: 568
+  user_name: Host user is [apps]
+screenshots: []
+sources:
+- https://apps.truenas.com/catalog/speicher-md_community/
+- https://github.com/coPetence/speicher.md
+- https://docs.speicher.md/quick-start/self-hosted-manual
+title: speicher.md
+train: community
+version: 1.0.0

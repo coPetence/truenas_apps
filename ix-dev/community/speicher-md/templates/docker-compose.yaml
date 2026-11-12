@@ -1,0 +1,77 @@
+{% set tpl = ix_lib.base.render.Render(values) %}
+
+{% set speicher_net = tpl.networks.create_internal("speicher-net") %}
+
+{% set perm_container = tpl.deps.perms(values.consts.perms_container_name) %}
+
+{% set pg_config = {
+  "user": values.consts.db_user,
+  "password": values.speicher.db_password,
+  "database": values.consts.db_name,
+  "volume": values.storage.postgres_data,
+} %}
+{% set postgres = tpl.deps.postgres(values.consts.postgres_container_name, values.speicher.postgres_image_selector, pg_config, perm_container) %}
+{% do postgres.container.add_network(speicher_net) %}
+
+{% set web = tpl.add_container(values.consts.speicher_container_name, "image") %}
+{% set worker = tpl.add_container(values.consts.worker_container_name, "image") %}
+{% set migrate = tpl.add_container(values.consts.migrate_container_name, "image") %}
+
+{% for c in [web, worker, migrate] %}
+  {% do c.set_user(values.run_as.user, values.run_as.group) %}
+  {% do c.add_network(speicher_net) %}
+  {% do c.depends.add_dependency(values.consts.postgres_container_name, "service_healthy") %}
+
+  {% do c.environment.add_env("SPEICHER_DATABASE_URL", postgres.get_url("postgres")) %}
+  {% do c.environment.add_env("SPEICHER_CONFIG_SOURCE", "database") %}
+  {% if values.speicher.public_url %}
+    {% do c.environment.add_env("SPEICHER_PUBLIC_URL", values.speicher.public_url) %}
+  {% endif %}
+  {% do c.environment.add_user_envs(values.speicher.additional_envs) %}
+{% endfor %}
+
+{% do migrate.setup_as_helper(disable_network=false) %}
+{% do migrate.set_command(["speicher", "migrate", "up"]) %}
+
+{% for c in [web, worker] %}
+  {% do c.depends.add_dependency(values.consts.migrate_container_name, "service_completed_successfully") %}
+  {% do c.environment.add_env("SPEICHER_ASSET_PATH", "%s/assets"|format(values.consts.data_path)) %}
+  {% do c.environment.add_env("SPEICHER_MIRROR_ROOT", "%s/mirrors"|format(values.consts.data_path)) %}
+  {% do c.add_storage(values.consts.data_path, values.storage.speicher_data) %}
+  {% for store in values.storage.additional_storage %}
+    {% do c.add_storage(store.mount_path, store) %}
+  {% endfor %}
+{% endfor %}
+
+{% do web.set_command(["node", "dist/main.js"]) %}
+{% do web.environment.add_env("PORT", values.network.web_port.port_number) %}
+{% do web.environment.add_env("SPEICHER_TRUST_PROXY", "uniquelocal") %}
+{% do web.environment.add_env("SPEICHER_PLATFORM", "truenas") %}
+{% do web.healthcheck.set_test("node", {"port": values.network.web_port.port_number, "path": "/-/healthz"}) %}
+{% do web.add_port(values.network.web_port) %}
+
+{% do worker.set_command(["node", "dist/worker.js"]) %}
+{% do worker.healthcheck.disable() %}
+
+{% do perm_container.add_or_skip_action("speicher_data", values.storage.speicher_data, {"uid": values.run_as.user, "gid": values.run_as.group, "mode": "check"}) %}
+
+{% if perm_container.has_actions() %}
+  {% do perm_container.activate() %}
+  {% do web.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+  {% do worker.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+  {% do postgres.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+{% endif %}
+
+{% if values.speicher.public_url %}
+  {% set url = tpl.funcs.url_to_dict(values.speicher.public_url) %}
+  {% do tpl.portals.add(values.network.web_port, {
+    "scheme": url.scheme,
+    "host": url.host,
+    "port": url.port or (443 if url.scheme == "https" else 80),
+    "path": url.path or "/",
+  }) %}
+{% else %}
+  {% do tpl.portals.add(values.network.web_port) %}
+{% endif %}
+
+{{ tpl.render() | tojson }}
